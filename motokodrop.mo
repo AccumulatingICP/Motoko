@@ -22,9 +22,12 @@ import ExtCore "../motoko/ext/Core";
 import ExtCommon "../motoko/ext/Common";
 import ExtAllowance "../motoko/ext/Allowance";
 import ExtNonFungible "../motoko/ext/NonFungible";
-
+//EXTv2 SALE
+import Encoding "mo:encoding/Binary";
+//Cap
+import Cap "mo:cap/Cap";
 shared (install) actor class nft_canister() = this {
-  
+
   // Types
   type Time = Time.Time;
   type AccountIdentifier = ExtCore.AccountIdentifier;
@@ -44,7 +47,7 @@ shared (install) actor class nft_canister() = this {
   type Metadata = ExtCommon.Metadata;
   type MintRequest  = ExtNonFungible.MintRequest;
   type NotifyService = ExtCore.NotifyService;
-  
+
   //Marketplace
   type Transaction = {
     token : TokenIdentifier;
@@ -71,9 +74,58 @@ shared (install) actor class nft_canister() = this {
   };
   type AccountBalanceArgs = { account : AccountIdentifier };
   type ICPTs = { e8s : Nat64 };
+
+  type SendArgs = {
+    memo: Nat64;
+    amount: ICPTs;
+    fee: ICPTs;
+    from_subaccount: ?SubAccount;
+    to: AccountIdentifier;
+    created_at_time: ?Time;
+  };
+  let LEDGER_CANISTER = actor "ryjl3-tyaaa-aaaaa-aaaba-cai" : actor { 
+    send_dfx : shared SendArgs -> async Nat64;
+    account_balance_dfx : shared query AccountBalanceArgs -> async ICPTs; 
+  };
+
+  //Cap
+  type CapDetailValue = {
+    #I64 : Int64;
+    #U64 : Nat64;
+    #Vec : [CapDetailValue];
+    #Slice : [Nat8];
+    #Text : Text;
+    #True;
+    #False;
+    #Float : Float;
+    #Principal : Principal;
+  };
+  type CapEvent = {
+    time : Nat64;
+    operation : Text;
+    details : [(Text, CapDetailValue)];
+    caller : Principal;
+  };
+  type CapIndefiniteEvent = {
+    operation : Text;
+    details : [(Text, CapDetailValue)];
+    caller : Principal;
+  };
+  //EXTv2 SALE
+  private stable var _disbursementsState : [(TokenIndex, AccountIdentifier, SubAccount, Nat64)] = [];
+  private stable var _nextSubAccount : Nat = 0;
+  private var _disbursements : List.List<(TokenIndex, AccountIdentifier, SubAccount, Nat64)> = List.fromArray(_disbursementsState);
+  private var salesFees : [(AccountIdentifier, Nat64)] = [
+    ("df45aa9740ce7998a13da95d5fa67335882393562f2cd8f67e8fdeb9cac86db2", 2500), //Royalty Fee
+    ("c7e461041c0c5800a56b64bb7cefc247abc0bbbb99bd46ff71c64e92d9f5c2f9", 1000), //Entrepot Fee 1%
+  ];
   
-  let LEDGER_CANISTER = actor "ryjl3-tyaaa-aaaaa-aaaba-cai" : actor { account_balance_dfx : shared query AccountBalanceArgs -> async ICPTs };
-  
+  //CAP
+  private stable var capRootBucketId : ?Text = null;
+  let CapService = Cap.Cap(?"lj532-6iaaa-aaaah-qcc7a-cai", capRootBucketId);
+  private stable var _capEventsState : [CapIndefiniteEvent] = [];
+  private var _capEvents : List.List<CapIndefiniteEvent> = List.fromArray(_capEventsState);
+  private stable var _runHeartbeat : Bool = true;  
   
   private let EXTENSIONS : [Extension] = ["@ext/common", "@ext/nonfungible"];
   
@@ -90,6 +142,7 @@ shared (install) actor class nft_canister() = this {
   
   private var _registry : HashMap.HashMap<TokenIndex, AccountIdentifier> = HashMap.fromIter(_registryState.vals(), 0, ExtCore.TokenIndex.equal, ExtCore.TokenIndex.hash);
   private var _tokenMetadata : HashMap.HashMap<TokenIndex, Metadata> = HashMap.fromIter(_tokenMetadataState.vals(), 0, ExtCore.TokenIndex.equal, ExtCore.TokenIndex.hash);
+  private var _tokenMetadataQuickIndex : HashMap.HashMap<TokenIndex, Metadata> = HashMap.fromIter(Iter.map<(TokenIndex, Metadata), (TokenIndex, Metadata)>(_tokenMetadataState.vals(), func(a : (TokenIndex, Metadata)) : (TokenIndex, Metadata) { (a.0, #nonfungible({ metadata = null })) }), 0, ExtCore.TokenIndex.equal, ExtCore.TokenIndex.hash);
 	private var _owners : HashMap.HashMap<AccountIdentifier, [TokenIndex]> = HashMap.fromIter(_ownersState.vals(), 0, AID.equal, AID.hash);
   
   
@@ -114,7 +167,6 @@ shared (install) actor class nft_canister() = this {
   stable var totplookup : [Text] = [];
   stable var mdmap : [TokenIndex] = [];
   var _tokensForClaimList : List.List<TokenIndex> = List.fromArray(_tokensForClaim);
-  
   //State functions
   system func preupgrade() {
     _registryState := Iter.toArray(_registry.entries());
@@ -125,6 +177,11 @@ shared (install) actor class nft_canister() = this {
     _paymentsState := Iter.toArray(_payments.entries());
     _claimState := Iter.toArray(_claim.entries());
     _tokensForClaim := List.toArray(_tokensForClaimList);
+    //EXTv2 SALE
+    _disbursementsState := List.toArray(_disbursements);
+    
+    //Cap
+    _capEventsState := List.toArray(_capEvents);
   };
   system func postupgrade() {
     _registryState := [];
@@ -135,6 +192,11 @@ shared (install) actor class nft_canister() = this {
     _paymentsState := [];
     _claimState := [];
     _tokensForClaim := [];
+    //EXTv2 SALE
+    _disbursementsState := [];
+
+    //Cap
+    _capEventsState := [];
   };
   //Claim
   func checkTOTP(code : Text) : Bool {
@@ -151,8 +213,8 @@ shared (install) actor class nft_canister() = this {
     _tokensForClaimList := a.1;
     a.0
   };
-
   public shared(msg) func claim(code : Text) : async Result.Result<(TokenIndex, Bool), Text> {
+    return #err("The drop has ended!");
     let claimer = AID.fromPrincipal(msg.caller, null);
     switch(_claim.get(msg.caller)){
       case(?token) {
@@ -161,10 +223,10 @@ shared (install) actor class nft_canister() = this {
       };
       case(_){};
     };
-    if (code.size() != 6) return #err("Invalid code!");
+    //if (code.size() != 6) return #err("Invalid code!");
     if (Time.now() >= 1636063200000000000) return #err("The drop has ended!");
     if (List.size(_tokensForClaimList) == 0) return #err("There are no more NFTs left!");
-    if (checkTOTP(code) == false) return #err("Your code is invalid - please rescan the QR code!");
+    //if (checkTOTP(code) == false) return #err("Your code is invalid - please rescan the QR code!");
     var token = Option.unwrap(nextToken());
     _transferTokenToUser(token, claimer);
     _claimed += 1;
@@ -172,27 +234,47 @@ shared (install) actor class nft_canister() = this {
     #ok((token, true));
   };
   
+  //EXTv2 SALE
+  system func heartbeat() : async () {
+    if (_runHeartbeat == true){
+      await cronDisbursements();
+      await cronSettlements();
+      await cronCapEvents();
+    };
+  };
   //Listings
-  public shared(msg) func lock(tokenid : TokenIdentifier, price : Nat64, address : AccountIdentifier, subaccount : SubAccount) : async Result.Result<AccountIdentifier, CommonError> {
+  //EXTv2 SALE
+  func _natToSubAccount(n : Nat) : SubAccount {
+    let n_byte = func(i : Nat) : Nat8 {
+        assert(i < 32);
+        let shift : Nat = 8 * (32 - 1 - i);
+        Nat8.fromIntWrap(n / 2**shift)
+    };
+    Array.tabulate<Nat8>(32, n_byte)
+  };
+  func _getNextSubAccount() : SubAccount {
+    var _saOffset = 4294967296;
+    _nextSubAccount += 1;
+    return _natToSubAccount(_saOffset+_nextSubAccount);
+  };
+  func _addDisbursement(d : (TokenIndex, AccountIdentifier, SubAccount, Nat64)) : () {
+    _disbursements := List.push(d, _disbursements);
+  };
+  public shared(msg) func lock(tokenid : TokenIdentifier, price : Nat64, address : AccountIdentifier, _subaccountNOTUSED : SubAccount) : async Result.Result<AccountIdentifier, CommonError> {
 		if (ExtCore.TokenIdentifier.isPrincipal(tokenid, Principal.fromActor(this)) == false) {
 			return #err(#InvalidToken(tokenid));
-		};
-		if (subaccount.size() != 32) {
-			return #err(#Other("Wrong subaccount"));				
 		};
 		let token = ExtCore.TokenIdentifier.getIndex(tokenid);
     if (_isLocked(token)) {					
       return #err(#Other("Listing is locked"));				
     };
+    let subaccount = _getNextSubAccount();
 		switch(_tokenListing.get(token)) {
 			case (?listing) {
         if (listing.price != price) {
           return #err(#Other("Price has changed!"));
         } else {
-          let paymentAddress : AccountIdentifier = AID.fromPrincipal(listing.seller, ?subaccount);
-          if (Option.isSome(Array.find<(AccountIdentifier, Principal, SubAccount)>(_usedPaymentAddressess, func (a : (AccountIdentifier, Principal, SubAccount)) : Bool { a.0 == paymentAddress}))) {
-            return #err(#Other("Payment address has been used"));
-          };
+          let paymentAddress : AccountIdentifier = AID.fromPrincipal(Principal.fromActor(this), ?subaccount);
           _tokenListing.put(token, {
             seller = listing.seller;
             price = listing.price;
@@ -203,17 +285,16 @@ shared (install) actor class nft_canister() = this {
               let resp : Result.Result<(), CommonError> = await settle(tokenid);
               switch(resp) {
                 case(#ok) {
-                  return #err(#Other("Listing as sold"));
+                  return #err(#Other("Listing has sold"));
                 };
                 case(#err _) {
-                  //If settled outside of here...
-                  if (Option.isNull(_tokenListing.get(token))) return #err(#Other("Listing as sold"));
+                  //Atomic protection
+                  if (Option.isNull(_tokenListing.get(token))) return #err(#Other("Listing has sold"));
                 };
               };
             };
             case(_){};
           };
-          _usedPaymentAddressess := Array.append(_usedPaymentAddressess, [(paymentAddress, listing.seller, subaccount)]);
           _tokenSettlement.put(token, {
             seller = listing.seller;
             price = listing.price;
@@ -235,28 +316,48 @@ shared (install) actor class nft_canister() = this {
 		let token = ExtCore.TokenIdentifier.getIndex(tokenid);
     switch(_tokenSettlement.get(token)) {
       case(?settlement){
-        let response : ICPTs = await LEDGER_CANISTER.account_balance_dfx({account = AID.fromPrincipal(settlement.seller, ?settlement.subaccount)});
+        if (settlement.price < 100000) {
+          _tokenSettlement.delete(token);
+          return #err(#Other("Bad settlement"));	
+        };
+        let response : ICPTs = await LEDGER_CANISTER.account_balance_dfx({account = AID.fromPrincipal(Principal.fromActor(this), ?settlement.subaccount)});
         switch(_tokenSettlement.get(token)) {
           case(?settlement){
             if (response.e8s >= settlement.price){
-              //We can settle!
-              _payments.put(settlement.seller, switch(_payments.get(settlement.seller)) {
-                case(?p) Array.append(p, [settlement.subaccount]);
-                case(_) [settlement.subaccount];
-              });
-              _transferTokenToUser(token, settlement.buyer);
-              _transactions := Array.append(_transactions, [{
-                token = tokenid;
-                seller = settlement.seller;
-                price = settlement.price;
-                buyer = settlement.buyer;
-                time = Time.now();
-              }]);
-              _tokenListing.delete(token);
-              _tokenSettlement.delete(token);
-              return #ok();
+              switch (_registry.get(token)) {
+                case (?token_owner) {
+                  var bal : Nat64 = settlement.price - (10000 * Nat64.fromNat(salesFees.size() + 1));
+                  var rem = bal;
+                  for(f in salesFees.vals()){
+                    var _fee : Nat64 = bal * f.1 / 100000;
+                    _addDisbursement((token, f.0, settlement.subaccount, _fee));
+                    rem := rem -  _fee : Nat64;
+                  };
+                  _addDisbursement((token, token_owner, settlement.subaccount, rem));
+                  _capAddSale(token, token_owner, settlement.buyer, settlement.price);
+                  _transferTokenToUser(token, settlement.buyer);
+                  _transactions := Array.append(_transactions, [{
+                    token = tokenid;
+                    seller = settlement.seller;
+                    price = settlement.price;
+                    buyer = settlement.buyer;
+                    time = Time.now();
+                  }]);
+                  _tokenListing.delete(token);
+                  _tokenSettlement.delete(token);
+                  return #ok();
+                };
+                case (_) {
+                  return #err(#InvalidToken(tokenid));
+                };
+              };
             } else {
-              return #err(#Other("Insufficient funds sent"));
+              if (_isLocked(token)) {					
+                return #err(#Other("Insufficient funds sent"));
+              } else {
+                _tokenSettlement.delete(token);
+                return #err(#Other("Nothing to settle"));				
+              };
             };
           };
           case(_) return #err(#Other("Nothing to settle"));
@@ -266,9 +367,6 @@ shared (install) actor class nft_canister() = this {
     };
   };
   public shared(msg) func list(request: ListRequest) : async Result.Result<(), CommonError> {
-    if (Time.now() < 1635854400000000000) {
-      return #err(#Other("The marketplace opens 2 Novembber 2021 08:00 ET!"));
-    };
 		if (ExtCore.TokenIdentifier.isPrincipal(request.token, Principal.fromActor(this)) == false) {
 			return #err(#InvalidToken(request.token));
 		};
@@ -314,8 +412,165 @@ shared (install) actor class nft_canister() = this {
       };
     };
   };
+  public shared(msg) func cronDisbursements() : async () {
+    var _cont : Bool = true;
+    while(_cont){ _cont := false;
+      var last = List.pop(_disbursements);
+      switch(last.0){
+        case(?d) {
+          _disbursements := last.1;
+          try {
+            var bh = await LEDGER_CANISTER.send_dfx({
+              memo = Encoding.BigEndian.toNat64(Blob.toArray(Principal.toBlob(Principal.fromText(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), d.0)))));
+              amount = { e8s = d.3 };
+              fee = { e8s = 10000 };
+              from_subaccount = ?d.2;
+              to = d.1;
+              created_at_time = null;
+            });
+          } catch (e) {
+            _disbursements := List.push(d, _disbursements);
+          };
+        };
+        case(_) {
+          _cont := false;
+        };
+      };
+    };
+  };
+  public shared(msg) func cronSettlements() : async () {
+    for(settlement in _tokenSettlement.entries()){
+        ignore(settle(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), settlement.0)));
+    };
+  };
   
-  public shared(msg) func removePayments(toremove : [SubAccount]) : async () {};
+  //Cap
+  func _capAddTransfer(token : TokenIndex, from : AccountIdentifier, to : AccountIdentifier) : () {
+    let event : CapIndefiniteEvent = {
+      operation = "transfer";
+      details = [
+        ("to", #Text(to)),
+        ("from", #Text(from)),
+        ("token", #Text(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), token))),
+        ("balance", #U64(1)),
+      ];
+      caller = Principal.fromActor(this);
+    };
+    _capAdd(event);
+  };
+  func _capAddSale(token : TokenIndex, from : AccountIdentifier, to : AccountIdentifier, amount : Nat64) : () {
+    let event : CapIndefiniteEvent = {
+      operation = "sale";
+      details = [
+        ("to", #Text(to)),
+        ("from", #Text(from)),
+        ("token", #Text(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), token))),
+        ("balance", #U64(1)),
+        ("price_decimals", #U64(8)),
+        ("price_currency", #Text("ICP")),
+        ("price", #U64(amount)),
+      ];
+      caller = Principal.fromActor(this);
+    };
+    _capAdd(event);
+  };
+  func _capAddMint(token : TokenIndex, from : AccountIdentifier, to : AccountIdentifier, amount : ?Nat64) : () {
+    let event : CapIndefiniteEvent = switch(amount) {
+      case(?a) {
+        {
+          operation = "mint";
+          details = [
+            ("to", #Text(to)),
+            ("from", #Text(from)),
+            ("token", #Text(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), token))),
+            ("balance", #U64(1)),
+            ("price_decimals", #U64(8)),
+            ("price_currency", #Text("ICP")),
+            ("price", #U64(a)),
+          ];
+          caller = Principal.fromActor(this);
+        };
+      };
+      case(_) {
+        {
+          operation = "mint";
+          details = [
+            ("to", #Text(to)),
+            ("from", #Text(from)),
+            ("token", #Text(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), token))),
+            ("balance", #U64(1)),
+          ];
+          caller = Principal.fromActor(this);
+        };
+      };
+    };
+    _capAdd(event);
+  };
+  func _capAdd(event : CapIndefiniteEvent) : () {
+    _capEvents := List.push(event, _capEvents);
+  };
+  public shared(msg) func cronCapEvents() : async () {
+    var _cont : Bool = true;
+    while(_cont){ _cont := false;
+      var last = List.pop(_capEvents);
+      switch(last.0){
+        case(?event) {
+          _capEvents := last.1;
+          try {
+            ignore await CapService.insert(event);
+          } catch (e) {
+            _capEvents := List.push(event, _capEvents);
+          };
+        };
+        case(_) {
+          _cont := false;
+        };
+      };
+    };
+  };
+  public shared(msg) func initCap() : async () {
+    if (Option.isNull(capRootBucketId)){
+      try {
+        capRootBucketId := await CapService.handshake(Principal.toText(Principal.fromActor(this)), 1_000_000_000_000);
+      } catch e {};
+    };
+  };
+  private stable var historicExportHasRun : Bool = false;
+  public shared(msg) func historicExport() : async Bool {
+    if (historicExportHasRun == false){
+      var events : [CapEvent] = [];
+      for(tx in _transactions.vals()){
+        let event : CapEvent = {
+          time = Int64.toNat64(Int64.fromInt(tx.time));
+          operation = "sale";
+          details = [
+            ("to", #Text(tx.buyer)),
+            ("from", #Text(Principal.toText(tx.seller))),
+            ("token", #Text(tx.token)),
+            ("balance", #U64(1)),
+            ("price_decimals", #U64(8)),
+            ("price_currency", #Text("ICP")),
+            ("price", #U64(tx.price)),
+          ];
+          caller = Principal.fromActor(this);
+        };
+        events := Array.append(events, [event]);
+      };
+      try {
+        ignore(await CapService.migrate(events));
+        historicExportHasRun := true;        
+      } catch (e) {};
+    };
+    historicExportHasRun;
+  };
+  public shared(msg) func adminKillHeartbeat() : async () {
+    assert(msg.caller == _minter);
+    _runHeartbeat := false;
+  };
+  public shared(msg) func adminStartHeartbeat() : async () {
+    assert(msg.caller == _minter);
+    _runHeartbeat := true;
+  };
 
 	public shared(msg) func setMinter(minter : Principal) : async () {
 		assert(msg.caller == _minter);
@@ -363,22 +618,28 @@ shared (install) actor class nft_canister() = this {
               //Do this to avoid atomicity issue
               _removeTokenFromUser(token);
               let notifier : NotifyService = actor(Principal.toText(canisterId));
-              switch(await notifier.tokenTransferNotification(request.token, request.from, request.amount, request.memo)) {
-                case (?balance) {
-                  if (balance == 1) {
-                    _transferTokenToUser(token, receiver);
-                    return #ok(request.amount);
-                  } else {
+              try {
+                switch(await notifier.tokenTransferNotification(request.token, request.from, request.amount, request.memo)) {
+                  case (?balance) {
+                    if (balance == 1) {
+                      _transferTokenToUser(token, receiver);
+      _capAddTransfer(token, owner, receiver);
+                      return #ok(request.amount);
+                    } else {
+                      //Refund
+                      _transferTokenToUser(token, owner);
+                      return #err(#Rejected);
+                    };
+                  };
+                  case (_) {
                     //Refund
                     _transferTokenToUser(token, owner);
                     return #err(#Rejected);
                   };
                 };
-                case (_) {
-                  //Refund
-                  _transferTokenToUser(token, owner);
-                  return #err(#Rejected);
-                };
+              } catch(e) {
+                _transferTokenToUser(token, owner);
+                return #err(#CannotNotify(receiver));
               };
             };
             case (_) {
@@ -387,6 +648,7 @@ shared (install) actor class nft_canister() = this {
           };
         } else {
           _transferTokenToUser(token, receiver);
+    _capAddTransfer(token, owner, receiver);
           return #ok(request.amount);
         };
       };
@@ -442,13 +704,8 @@ shared (install) actor class nft_canister() = this {
     Iter.toArray(_registry.entries());
   };
   public query func getTokens() : async [(TokenIndex, Metadata)] {
-    var resp : [(TokenIndex, Metadata)] = [];
-    for(e in _tokenMetadata.entries()){
-      resp := Array.append(resp, [(e.0, #nonfungible({ metadata = null }))]);
-    };
-    resp;
+    Iter.toArray(_tokenMetadataQuickIndex.entries());
   };
-  
   public query func tokens(aid : AccountIdentifier) : async Result.Result<[TokenIndex], CommonError> {
     switch(_owners.get(aid)) {
       case(?tokens) return #ok(tokens);
@@ -555,6 +812,21 @@ shared (install) actor class nft_canister() = this {
       case(_){};
     };
   };
+  public query func stats() : async (Nat64, Nat64, Nat64, Nat64, Nat, Nat, Nat) {
+    var res : (Nat64, Nat64, Nat64) = Array.foldLeft<Transaction, (Nat64, Nat64, Nat64)>(_transactions, (0,0,0), func (b : (Nat64, Nat64, Nat64), a : Transaction) : (Nat64, Nat64, Nat64) {
+      var total : Nat64 = b.0 + a.price;
+      var high : Nat64 = b.1;
+      var low : Nat64 = b.2;
+      if (high == 0 or a.price > high) high := a.price; 
+      if (low == 0 or a.price < low) low := a.price; 
+      (total, high, low);
+    });
+    var floor : Nat64 = 0;
+    for (a in _tokenListing.entries()){
+      if (floor == 0 or a.1.price < floor) floor := a.1.price;
+    };
+    (res.0, res.1, res.2, floor, _tokenListing.size(), _registry.size(), _transactions.size());
+  };
 
   //HTTP
   type HeaderField = (Text, Text);
@@ -590,8 +862,6 @@ shared (install) actor class nft_canister() = this {
   };
   let NOT_FOUND : HttpResponse = {status_code = 404; headers = []; body = Blob.fromArray([]); streaming_strategy = null};
   let BAD_REQUEST : HttpResponse = {status_code = 400; headers = []; body = Blob.fromArray([]); streaming_strategy = null};
-  
-  
   public query func http_request(request : HttpRequest) : async HttpResponse {
     let path = Iter.toArray(Text.tokens(request.url, #text("/")));
     switch(_getParam(request.url, "tokenid")) {
@@ -644,7 +914,7 @@ shared (install) actor class nft_canister() = this {
         "EXT by ToniqLabs Inc.\n" #
         "---\n" #
         "Claimable NFTs:                           " # debug_show (List.size(_tokensForClaimList)) # "\n" #
-        "Claimed NFTs:                             " # debug_show (_claimed) # "\n" #
+        "Claimed NFTs:                             " # debug_show (3000 - List.size(_tokensForClaimList) : Nat) # "\n" #
         "TOTP Codes:                               " # debug_show (totplookup.size()) # "\n" #
         "---\n" #
         "Cycle Balance:                            ~" # debug_show (Cycles.balance()/1000000000000) # "T\n" #
