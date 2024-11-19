@@ -1,31 +1,30 @@
-import Cycles "mo:base/ExperimentalCycles";
-import HashMap "mo:base/HashMap";
-import Int64 "mo:base/Int64";
-import Nat64 "mo:base/Nat64";
-import Nat32 "mo:base/Nat32";
-import Nat8 "mo:base/Nat8";
-import Nat "mo:base/Nat";
-import Principal "mo:base/Principal";
-import Result "mo:base/Result";
-import Iter "mo:base/Iter";
-import Int "mo:base/Int";
+import Array "mo:base/Array";
 import Blob "mo:base/Blob";
 import Char "mo:base/Char";
+import Cycles "mo:base/ExperimentalCycles";
+import HashMap "mo:base/HashMap";
+import Int "mo:base/Int";
+import Int64 "mo:base/Int64";
+import Iter "mo:base/Iter";
+import List "mo:base/List";
+import Nat "mo:base/Nat";
+import Nat32 "mo:base/Nat32";
+import Nat64 "mo:base/Nat64";
+import Nat8 "mo:base/Nat8";
+import Option "mo:base/Option";
+import Principal "mo:base/Principal";
+import Result "mo:base/Result";
 import Text "mo:base/Text";
 import Time "mo:base/Time";
-import Array "mo:base/Array";
-import Option "mo:base/Option";
-import List "mo:base/List";
+
+import Cap "mo:cap/Cap";
+import Encoding "mo:encoding/Binary";
 
 import AID "../motoko/util/AccountIdentifier";
-import ExtCore "../motoko/ext/Core";
-import ExtCommon "../motoko/ext/Common";
 import ExtAllowance "../motoko/ext/Allowance";
+import ExtCommon "../motoko/ext/Common";
+import ExtCore "../motoko/ext/Core";
 import ExtNonFungible "../motoko/ext/NonFungible";
-//EXTv2 SALE
-import Encoding "mo:encoding/Binary";
-//Cap
-import Cap "mo:cap/Cap";
 shared (install) actor class nft_canister() = this {
 
   // Types
@@ -83,9 +82,9 @@ shared (install) actor class nft_canister() = this {
     to: AccountIdentifier;
     created_at_time: ?Time;
   };
-  let LEDGER_CANISTER = actor "ryjl3-tyaaa-aaaaa-aaaba-cai" : actor { 
+  let LEDGER_CANISTER = actor "ryjl3-tyaaa-aaaaa-aaaba-cai" : actor {
     send_dfx : shared SendArgs -> async Nat64;
-    account_balance_dfx : shared query AccountBalanceArgs -> async ICPTs; 
+    account_balance_dfx : shared query AccountBalanceArgs -> async ICPTs;
   };
 
   //Cap
@@ -119,33 +118,33 @@ shared (install) actor class nft_canister() = this {
     ("df45aa9740ce7998a13da95d5fa67335882393562f2cd8f67e8fdeb9cac86db2", 2500), //Royalty Fee
     ("c7e461041c0c5800a56b64bb7cefc247abc0bbbb99bd46ff71c64e92d9f5c2f9", 1000), //Entrepot Fee 1%
   ];
-  
+
   //CAP
   private stable var capRootBucketId : ?Text = null;
   let CapService = Cap.Cap(?"lj532-6iaaa-aaaah-qcc7a-cai", capRootBucketId);
   private stable var _capEventsState : [CapIndefiniteEvent] = [];
   private var _capEvents : List.List<CapIndefiniteEvent> = List.fromArray(_capEventsState);
-  private stable var _runHeartbeat : Bool = true;  
-  
+  private stable var _runHeartbeat : Bool = true;
+
   private let EXTENSIONS : [Extension] = ["@ext/common", "@ext/nonfungible"];
-  
+
   //State work
   private stable var _registryState : [(TokenIndex, AccountIdentifier)] = [];
 	private stable var _tokenMetadataState : [(TokenIndex, Metadata)] = [];
   private stable var _ownersState : [(AccountIdentifier, [TokenIndex])] = [];
-  
+
   //For marketplace
 	private stable var _tokenListingState : [(TokenIndex, Listing)] = [];
 	private stable var _tokenSettlementState : [(TokenIndex, Settlement)] = [];
 	private stable var _paymentsState : [(Principal, [SubAccount])] = [];
 	private stable var _claimState : [(Principal, TokenIndex)] = [];
-  
+
   private var _registry : HashMap.HashMap<TokenIndex, AccountIdentifier> = HashMap.fromIter(_registryState.vals(), 0, ExtCore.TokenIndex.equal, ExtCore.TokenIndex.hash);
   private var _tokenMetadata : HashMap.HashMap<TokenIndex, Metadata> = HashMap.fromIter(_tokenMetadataState.vals(), 0, ExtCore.TokenIndex.equal, ExtCore.TokenIndex.hash);
   private var _tokenMetadataQuickIndex : HashMap.HashMap<TokenIndex, Metadata> = HashMap.fromIter(Iter.map<(TokenIndex, Metadata), (TokenIndex, Metadata)>(_tokenMetadataState.vals(), func(a : (TokenIndex, Metadata)) : (TokenIndex, Metadata) { (a.0, #nonfungible({ metadata = null })) }), 0, ExtCore.TokenIndex.equal, ExtCore.TokenIndex.hash);
 	private var _owners : HashMap.HashMap<AccountIdentifier, [TokenIndex]> = HashMap.fromIter(_ownersState.vals(), 0, AID.equal, AID.hash);
-  
-  
+
+
   //For marketplace
   private var _tokenListing : HashMap.HashMap<TokenIndex, Listing> = HashMap.fromIter(_tokenListingState.vals(), 0, ExtCore.TokenIndex.equal, ExtCore.TokenIndex.hash);
   private var _tokenSettlement : HashMap.HashMap<TokenIndex, Settlement> = HashMap.fromIter(_tokenSettlementState.vals(), 0, ExtCore.TokenIndex.equal, ExtCore.TokenIndex.hash);
@@ -156,11 +155,11 @@ shared (install) actor class nft_canister() = this {
   private stable var _supply : Balance  = 0;
   private stable var _minter : Principal  = Principal.fromText("sensj-ihxp6-tyvl7-7zwvj-fr42h-7ojjp-n7kxk-z6tvo-vxykp-umhfk-wqe");
   private stable var _nextTokenId : TokenIndex  = 0;
-  
+
   private var _claim : HashMap.HashMap<Principal, TokenIndex> = HashMap.fromIter(_claimState.vals(), 0, Principal.equal, Principal.hash);
-  
-  
-  
+
+
+
   stable var _claimed : Nat = 0;
   stable var _tokensForClaim : [TokenIndex] = [];
   stable var totpoffset : Int = 27261284;
@@ -179,7 +178,7 @@ shared (install) actor class nft_canister() = this {
     _tokensForClaim := List.toArray(_tokensForClaimList);
     //EXTv2 SALE
     _disbursementsState := List.toArray(_disbursements);
-    
+
     //Cap
     _capEventsState := List.toArray(_capEvents);
   };
@@ -233,15 +232,31 @@ shared (install) actor class nft_canister() = this {
     _claim.put(msg.caller, token);
     #ok((token, true));
   };
-  
-  //EXTv2 SALE
-  system func heartbeat() : async () {
-    if (_runHeartbeat == true){
-      await cronDisbursements();
-      await cronSettlements();
-      await cronCapEvents();
+
+
+ public shared(msg) func heartbeat_external() : async () {
+       if (_runHeartbeat == true){
+      try{
+        await cronDisbursements();
+        await cronSettlements();
+        await cronCapEvents();
+      } catch(e){
+        _runHeartbeat := false;
+      };
     };
   };
+     public query func isHeartbeatRunning() : async Bool {
+    _runHeartbeat;
+  };
+public query func heartbeat_pending() : async [(Text,Nat)]
+  {
+    [
+    ("Disbursements", List.size(_disbursements)),
+    ("CAP Events",  List.size(_capEvents)),
+    ("Expired Payment Settlements", Iter.size(_tokenSettlement.entries()))
+    ];
+  };
+
   //Listings
   //EXTv2 SALE
   func _natToSubAccount(n : Nat) : SubAccount {
@@ -265,8 +280,8 @@ shared (install) actor class nft_canister() = this {
 			return #err(#InvalidToken(tokenid));
 		};
 		let token = ExtCore.TokenIdentifier.getIndex(tokenid);
-    if (_isLocked(token)) {					
-      return #err(#Other("Listing is locked"));				
+    if (_isLocked(token)) {
+      return #err(#Other("Listing is locked"));
     };
     let subaccount = _getNextSubAccount();
 		switch(_tokenListing.get(token)) {
@@ -305,7 +320,7 @@ shared (install) actor class nft_canister() = this {
         };
 			};
 			case (_) {
-				return #err(#Other("No listing!"));				
+				return #err(#Other("No listing!"));
 			};
 		};
   };
@@ -318,7 +333,7 @@ shared (install) actor class nft_canister() = this {
       case(?settlement){
         if (settlement.price < 100000) {
           _tokenSettlement.delete(token);
-          return #err(#Other("Bad settlement"));	
+          return #err(#Other("Bad settlement"));
         };
         let response : ICPTs = await LEDGER_CANISTER.account_balance_dfx({account = AID.fromPrincipal(Principal.fromActor(this), ?settlement.subaccount)});
         switch(_tokenSettlement.get(token)) {
@@ -352,11 +367,11 @@ shared (install) actor class nft_canister() = this {
                 };
               };
             } else {
-              if (_isLocked(token)) {					
+              if (_isLocked(token)) {
                 return #err(#Other("Insufficient funds sent"));
               } else {
                 _tokenSettlement.delete(token);
-                return #err(#Other("Nothing to settle"));				
+                return #err(#Other("Nothing to settle"));
               };
             };
           };
@@ -371,8 +386,8 @@ shared (install) actor class nft_canister() = this {
 			return #err(#InvalidToken(request.token));
 		};
 		let token = ExtCore.TokenIdentifier.getIndex(request.token);
-    if (_isLocked(token)) {					
-      return #err(#Other("Listing is locked"));				
+    if (_isLocked(token)) {
+      return #err(#Other("Listing is locked"));
     };
     switch(_tokenSettlement.get(token)) {
       case(?settlement){
@@ -414,7 +429,7 @@ shared (install) actor class nft_canister() = this {
   };
   public shared(msg) func cronDisbursements() : async () {
     var _cont : Bool = true;
-    while(_cont){ _cont := false;
+    while(_cont){
       var last = List.pop(_disbursements);
       switch(last.0){
         case(?d) {
@@ -430,6 +445,7 @@ shared (install) actor class nft_canister() = this {
             });
           } catch (e) {
             _disbursements := List.push(d, _disbursements);
+             _cont := false;
           };
         };
         case(_) {
@@ -443,7 +459,7 @@ shared (install) actor class nft_canister() = this {
         ignore(settle(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), settlement.0)));
     };
   };
-  
+
   //Cap
   func _capAddTransfer(token : TokenIndex, from : AccountIdentifier, to : AccountIdentifier) : () {
     let event : CapIndefiniteEvent = {
@@ -511,7 +527,7 @@ shared (install) actor class nft_canister() = this {
   };
   public shared(msg) func cronCapEvents() : async () {
     var _cont : Bool = true;
-    while(_cont){ _cont := false;
+    while(_cont){
       var last = List.pop(_capEvents);
       switch(last.0){
         case(?event) {
@@ -520,6 +536,7 @@ shared (install) actor class nft_canister() = this {
             ignore await CapService.insert(event);
           } catch (e) {
             _capEvents := List.push(event, _capEvents);
+            _cont := false;
           };
         };
         case(_) {
@@ -558,7 +575,7 @@ shared (install) actor class nft_canister() = this {
       };
       try {
         ignore(await CapService.migrate(events));
-        historicExportHasRun := true;        
+        historicExportHasRun := true;
       } catch (e) {};
     };
     historicExportHasRun;
@@ -582,7 +599,7 @@ shared (install) actor class nft_canister() = this {
 		let token = _nextTokenId;
 		let md : Metadata = #nonfungible({
 			metadata = request.metadata;
-		}); 
+		});
 		_tokenMetadata.put(token, md);
     _transferTokenToUser(token, receiver);
 		_supply := _supply + 1;
@@ -657,7 +674,7 @@ shared (install) actor class nft_canister() = this {
       };
     };
   };
-  
+
   public query func getMinter() : async Principal {
     _minter;
   };
@@ -674,7 +691,7 @@ shared (install) actor class nft_canister() = this {
       case (?token_owner) {
 				if (AID.equal(aid, token_owner) == true) {
 					return #ok(1);
-				} else {					
+				} else {
 					return #ok(0);
 				};
       };
@@ -712,7 +729,7 @@ shared (install) actor class nft_canister() = this {
       case(_) return #err(#Other("No tokens"));
     };
   };
-  
+
   public query func tokens_ext(aid : AccountIdentifier) : async Result.Result<[(TokenIndex, ?Listing, ?Blob)], CommonError> {
 		switch(_owners.get(aid)) {
       case(?tokens) {
@@ -753,7 +770,7 @@ shared (install) actor class nft_canister() = this {
       };
     };
 	};
-  
+
   //Listings
   public query func transactions() : async [Transaction] {
     _transactions;
@@ -817,8 +834,8 @@ shared (install) actor class nft_canister() = this {
       var total : Nat64 = b.0 + a.price;
       var high : Nat64 = b.1;
       var low : Nat64 = b.2;
-      if (high == 0 or a.price > high) high := a.price; 
-      if (low == 0 or a.price < low) low := a.price; 
+      if (high == 0 or a.price > high) high := a.price;
+      if (low == 0 or a.price < low) low := a.price;
       (total, high, low);
     });
     var floor : Nat64 = 0;
@@ -898,7 +915,7 @@ shared (install) actor class nft_canister() = this {
       };
       case (_){};
     };
-    
+
     //Just show index
     var soldValue : Nat = Nat64.toNat(Array.foldLeft<Transaction, Nat64>(_transactions, 0, func (b : Nat64, a : Transaction) : Nat64 { b + a.price }));
     var avg : Nat = if (_transactions.size() > 0) {
@@ -979,7 +996,7 @@ shared (install) actor class nft_canister() = this {
         key = id;
     });
   };
-    
+
   //Internal cycle management - good general case
   public func acceptCycles() : async () {
     let available = Cycles.available();
@@ -989,7 +1006,7 @@ shared (install) actor class nft_canister() = this {
   public query func availableCycles() : async Nat {
     return Cycles.balance();
   };
-  
+
   //Private
   func _textToNat32(t : Text) : Nat32 {
     var reversed : [Nat32] = [];
@@ -1045,7 +1062,7 @@ shared (install) actor class nft_canister() = this {
           case(?time) {
             if (time > Time.now()) {
               return true;
-            } else {					
+            } else {
               return false;
             }
           };
