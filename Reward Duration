@@ -1,0 +1,56 @@
+export PROPOSAL_NEURON_ID="3ef5229ae69fdfc2d67a86a6b145abc9c64c897dcc8c419c8c4ebdef6ccdff01"
+export PEM_FILE="/Users/cole/motoko.pem"
+
+
+
+
+cat <<EOF > staking-rewards.candid
+(
+    record {
+        title = "Establish Voting Rewards";
+        url = "https://discord.com/channels/905854635405889546/1320220416454823947/1320220418963013716";
+        summary = "\
+## Objective\n\n 
+This proposal reduces the Reward Duration from 8 years to 4 years.\n\n 
+## Why This is Important\n\n 
+This is important to remain within defined inflationary factors, ensuring the inflationary schedule is maintained.\n\n 
+## Background\n\n 
+We can explore the effects of this feature before its implementation by examining potential situations that could occur with MOTOKO going forward:\n\n 
+https://docs.google.com/spreadsheets/d/1LiOCqUmSVm6bMaoDmg6dhX9U2QGtVSeLhzc_l4ELoZ0/edit?usp=sharing\n\n 
+## Pros\n\n 
+- Manages inflation mechanism.\n\n 
+- Maintains DAO security & stability.\n\n 
+
+## Cons\n\n 
+- Declining reward schedules may deter later participants.\n\n 
+- Potential demand for a new reward structure once the proposed schedule concludes.\n\n 
+## What is Asked of the Community\n\n 
+- Engage in the governance discussion, ask questions, and provide feedback. Refer to the spreadsheet.\n\n 
+- Participate in the proposal process and provide your input on potential inflation rates.\n\n
+        ";
+        action = opt variant {
+            ManageNervousSystemParameters = record {
+                voting_rewards_parameters = opt record {
+                    final_reward_rate_basis_points = opt (0 : nat64);
+                    initial_reward_rate_basis_points = opt (1000 : nat64);
+                    reward_rate_transition_duration_seconds = opt (126144000 : nat64);
+                    round_duration_seconds = opt (86400 : nat64)
+                }
+            }
+        }
+    }
+)
+EOF
+
+
+
+
+quill sns make-proposal \
+--canister-ids-file ./sns-canister-ids.json \
+--pem-file "$PEM_FILE" \
+"$PROPOSAL_NEURON_ID" \
+--proposal "$(cat staking-rewards.candid)" > msg.json
+
+
+
+quill send msg.json
