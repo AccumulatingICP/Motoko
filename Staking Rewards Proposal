@@ -1,0 +1,56 @@
+export PROPOSAL_NEURON_ID="3ef5229ae69fdfc2d67a86a6b145abc9c64c897dcc8c419c8c4ebdef6ccdff01"
+export PEM_FILE="/Users/cole/motoko.pem"
+
+
+
+
+cat <<EOF > staking-rewards.candid
+(
+    record {
+        title = "Establish Voting Rewards";
+        url = "https://discord.com/channels/905854635405889546/1320220416454823947/1320220418963013716";
+        summary = "\
+## Objective\n\n 
+This proposal aims to establish staking rewards within the MOTOKO SNS. This is to be achieved by burning 1,100 MOTOKO, which will be used to calculate the runway for a declining reward rate of 10% over 8 years, accounting for the hypothetical inflationary rewards of 2,000 staked MOTOKO. Should this proposal be accepted, subsequent transfer proposals will follow to burn MOTOKO.\n\n 
+## Why This is Important\n\n 
+We set a crucial goal of achieving 1,000 staked MOTOKO. Reaching this goal opens new opportunities for the community, such as the potential of providing liquidity. However, once this liquidity is available, the natural incentive to stake may diminish, leading to a potential shift where some participants may choose to dissolve their stakes rather than continue. To maintain the strength of our ecosystem and prevent a sharp decline in staked assets, it’s crucial that we establish strong, ongoing incentives for staking. This will ensure stability and sustained participation beyond the initial goal, supporting the long-term success of MOTOKO.\n\n 
+## Background\n\n 
+We can explore the effects of this feature before its implementation by examining potential situations that could occur with MOTOKO going forward:\n\n 
+https://docs.google.com/spreadsheets/d/1LiOCqUmSVm6bMaoDmg6dhX9U2QGtVSeLhzc_l4ELoZ0/edit?usp=sharing\n\n 
+## Pros\n\n 
+- Incentivizes long-term staking within the community.\n\n 
+- Maintains DAO security & stability by preventing a drop in voting power.\n\n 
+- Burning 1,100 MOTOKO reduces supply by 11% in the short-term.\n\n 
+## Cons\n\n 
+- Declining reward schedules may deter later participants.\n\n 
+- Potential demand for a new reward structure once the proposed schedule concludes.\n\n 
+## What is Asked of the Community\n\n 
+- Engage in the governance discussion, ask questions, and provide feedback. Refer to the spreadsheet.\n\n 
+- Participate in the proposal process and provide your input on potential inflation rates.\n\n
+        ";
+        action = opt variant {
+            ManageNervousSystemParameters = record {
+                voting_rewards_parameters = opt record {
+                    final_reward_rate_basis_points = opt (0 : nat64);
+                    initial_reward_rate_basis_points = opt (1000 : nat64);
+                    reward_rate_transition_duration_seconds = opt (252288000 : nat64);
+                    round_duration_seconds = opt (86400 : nat64)
+                }
+            }
+        }
+    }
+)
+EOF
+
+
+
+
+quill sns make-proposal \
+--canister-ids-file ./sns-canister-ids.json \
+--pem-file "$PEM_FILE" \
+"$PROPOSAL_NEURON_ID" \
+--proposal "$(cat staking-rewards.candid)" > msg.json
+
+
+
+quill send msg.json
