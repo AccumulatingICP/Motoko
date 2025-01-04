@@ -1,0 +1,51 @@
+export PROPOSAL_NEURON_ID="3ef5229ae69fdfc2d67a86a6b145abc9c64c897dcc8c419c8c4ebdef6ccdff01"
+export PEM_FILE="/Users/cole/motoko.pem"
+
+
+
+
+cat <<EOF > stake-time.candid
+(
+    record {
+        title = "Increase Max Stake Duration to 1 Month";
+        url = "https://discord.com/channels/905854635405889546/1320220286905225217/1320220289266749481";
+        summary = "\
+## Objective\n\n 
+This proposal sets out with the objective to increase the active stake duration of MOTOKO from 1 week to 1 month, and in turn, scale voting power linearly across this timeframe, from 1 to 2 VP.\n\n 
+## Why this is important\n\n 
+Longer stake durations encourage deeper engagement from DAO members, fostering a more stable and committed governance structure. By tying increased voting power to extended staking periods, the DAO rewards participants who are willing to make longer-term contributions to the ecosystem, aligning incentives for both governance and token utility.\n\n 
+## Pros\n\n 
+- Incentivizes longterm commitment & participation\n\n 
+- Improves quality of governance with increased skin in the game\n\n 
+- Aligns voting power with long term neurons\n\n 
+## Cons\n\n 
+- Decreased liquidity accompanies increased stake durations\n\n 
+- Has the potential to reduce appeal for short term stakes\n\n 
+## Security concerns \n\n 
+- Reduces the perceived security threshold if a substantial portion of neurons remain low timeframe stakes\n\n 
+## What is asked of the community\n\n 
+- Engage in the governance discussion, ask questions, and provide feedback\n\n
+- Determine whether the proposed increased maximum stake duration aligns with something you can personally commit to\n\n 
+- Continue informed participation in MOTOKO governance, ensuring newfound voting power is utilized\n\n 
+- Assist in the communication of increased stake durations, and join our commitment to longterm growth\n\n
+       ";
+action = opt variant { 
+ManageNervousSystemParameters = record { 
+max_dissolve_delay_seconds = opt (2592000 : nat64); 
+max_dissolve_delay_bonus_percentage = opt (100 : nat64); neuron_minimum_dissolve_delay_to_vote_seconds = opt (604800 : nat64); initial_voting_period_seconds = null; 
+            }
+        }
+    }
+)
+EOF
+
+
+quill sns make-proposal \
+--canister-ids-file ./sns-canister-ids.json \
+--pem-file "$PEM_FILE" \
+"$PROPOSAL_NEURON_ID" \
+--proposal "$(cat stake-time.candid)" > msg.json
+
+
+
+quill send msg.json
