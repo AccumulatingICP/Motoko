@@ -8,19 +8,19 @@ errors_csv="error_principals.csv"
 
 # Add headers to the output CSVs
 echo "Principal,Subaccount,Balance" > "$success_csv"
-echo "Principal,Subaccount,Error" > "$retry_csv"
-echo "Principal,Subaccount,Error" > "$errors_csv"
+echo "Principal,Subaccount" > "$retry_csv"
+echo "Principal,Subaccount" > "$errors_csv"
 
 # Process each line in the failed CSV
-tail -n +2 "$failed_csv" | while IFS=',' read -r principal subaccount error; do
+tail -n +2 "$failed_csv" | while IFS=',' read -r principal subaccount; do
     # Remove spaces and sanitize input
     principal=$(echo "$principal" | tr -d '[:space:]')
     subaccount=$(echo "$subaccount" | tr -d '[:space:]')
 
     if [[ -z "$subaccount" ]]; then
         echo "Error: Missing subaccount for $principal. Skipping..."
-        echo "$principal,,Missing subaccount" >> "$retry_csv"
-        echo "$principal,,Missing subaccount" >> "$errors_csv"
+        echo "$principal," >> "$retry_csv"
+        echo "$principal," >> "$errors_csv"
         continue
     fi
 
@@ -50,9 +50,9 @@ tail -n +2 "$failed_csv" | while IFS=',' read -r principal subaccount error; do
 
     # Check if the call succeeded
     if [[ $? -ne 0 ]]; then
-        echo "Retry failed for $principal: $balance"
-        echo "$principal,$subaccount,\"$balance\"" >> "$retry_csv"
-        echo "$principal,$subaccount,\"$balance\"" >> "$errors_csv"
+        echo "Retry failed for $principal with subaccount $subaccount."
+        echo "$principal,$subaccount" >> "$retry_csv"
+        echo "$principal,$subaccount" >> "$errors_csv"
         continue
     fi
 
@@ -71,4 +71,3 @@ done
 # Gracefully exit the script after processing all lines
 echo "All entries have been processed. Exiting..."
 exit 0
-
