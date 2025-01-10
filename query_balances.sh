@@ -1,78 +1,140 @@
 #!/bin/bash
 
+# ---------------------------------------------------------
 # Input and output files
+# ---------------------------------------------------------
 input_csv="principals.csv"
-output_csv="principals_with_balance.csv"
-failed_csv="failed_principals.csv"
+output_pass1="successful_queries_pass1.csv"
+output_pass2="successful_queries_pass2.csv"
+failed_first_pass_csv="failed_first_pass.csv"
+failed_final_csv="failed_queries_final.csv"
 
-# Add headers to the output CSVs
-echo "Principal,Subaccount,Balance" > "$output_csv"
-echo "Principal,Subaccount" > "$failed_csv"
+# Add headers to output files
+echo "Principal,Subaccount,Balance" > "$output_pass1"
+echo "Principal,Subaccount,Balance" > "$output_pass2"
+echo "Principal,Subaccount" > "$failed_first_pass_csv"
+echo "Principal,Subaccount" > "$failed_final_csv"
 
-# Process each line in the CSV
-tail -n +2 "$input_csv" | while IFS= read -r account; do
-    # Trim spaces and sanitize input
-    account=$(echo "$account" | tr -d '[:space:]' | tr -d '"')
+# ---------------------------------------------------------
+# Function to format subaccount as a blob
+# ---------------------------------------------------------
+format_subaccount_blob() {
+    local subaccount="$1"
+    echo "$subaccount" | sed 's/../\\&/g'
+}
 
-    if [[ "$account" == *.* ]]; then
-        # Handle non-default accounts with subaccount
-        principal_subaccount=$(echo "$account" | cut -d'.' -f1)
-        subaccount_hex=$(echo "$account" | cut -d'.' -f2)
+# ---------------------------------------------------------
+# Function to query balance
+# ---------------------------------------------------------
+query_balance() {
+    local principal="$1"
+    local subaccount="$2"
 
-        owner=$(echo "$principal_subaccount" | cut -d'-' -f1-5)  # Extract full principal
-
-        # Format subaccount as blob and ensure it's exactly 32 bytes
-        subaccount_blob=$(echo "$subaccount_hex" | sed 's/../\\&/g')  # Convert hex to blob format
-        subaccount_length=$(echo -n "$subaccount_blob" | tr -d '\\' | wc -c)
-
-        if [[ "$subaccount_length" -lt 64 ]]; then
-            # Pad with leading zeros if less than 32 bytes
-            padding=$(printf '\\00%.0s' $(seq 1 $((64 - subaccount_length))))
-            subaccount_blob="$padding$subaccount_blob"
-        elif [[ "$subaccount_length" -gt 64 ]]; then
-            # Truncate if longer than 32 bytes
-            subaccount_blob=$(echo "$subaccount_blob" | cut -c-$((64 + 31)))  # Keep first 64 chars
-        fi
-
-        echo "Querying balance for owner: $owner with subaccount: opt blob \"$subaccount_blob\"..."
+    # Format subaccount as blob if provided
+    local candid_args
+    if [[ -n "$subaccount" ]]; then
+        local subaccount_blob
+        subaccount_blob="$(format_subaccount_blob "$subaccount")"
         candid_args="(
-            record { 
-                owner = principal \"$owner\"; 
-                subaccount = opt blob \"$subaccount_blob\" 
+            record {
+                owner = principal \"$principal\";
+                subaccount = opt blob \"$subaccount_blob\"
             }
         )"
     else
-        # Handle default accounts (no subaccount)
-        owner="$account"
-        echo "Querying balance for owner: $owner (default account)..."
         candid_args="(
-            record { 
-                owner = principal \"$owner\"; 
-                subaccount = null 
+            record {
+                owner = principal \"$principal\";
+                subaccount = null
             }
         )"
-        subaccount_hex=""  # No subaccount
     fi
 
-    # Query the balance with `--query` for faster execution
-    balance=$(dfx canister --network ic call --query k45jy-aiaaa-aaaaq-aadcq-cai icrc1_balance_of "$candid_args" 2>&1)
+    # Query the balance
+    local balance
+    balance="$(dfx canister --network ic call k45jy-aiaaa-aaaaq-aadcq-cai icrc1_balance_of "$candid_args" 2>&1)"
+    local exit_code=$?
 
-    # Check if the call succeeded
-    if [[ $? -ne 0 ]]; then
-        echo "Error querying balance for $account: $balance"
-        echo "$owner,$subaccount_hex" >> "$failed_csv"
-        continue
+    # If call fails => return error
+    if (( exit_code != 0 )); then
+        # Return 1 => indicates an error
+        return 1
     fi
 
     # Extract the balance value (nat) and remove ": nat"
-    balance_value=$(echo "$balance" | awk -F'[()]' '{print $2}' | sed 's/ : nat//g' | tr -d '_')
+    local balance_value
+    balance_value="$(echo "$balance" | awk -F'[()]' '{print $2}' | sed 's/ : nat//g' | tr -d '_')"
 
-    # Ensure balance_value is numeric before comparing
+    # If numeric AND > 0 => success, else partial info
     if [[ "$balance_value" =~ ^[0-9]+$ && "$balance_value" -gt 0 ]]; then
-        echo "$owner,$subaccount_hex,$balance_value" >> "$output_csv"
-        echo "Account: $owner.$subaccount_hex has balance: $balance_value"
+        # Return 0 => success, and echo only the balance
+        echo "$balance_value"
+        return 0
     else
-        echo "Account: $owner.$subaccount_hex has no balance."
+        # Return partial
+        echo ""
+        return 2
+    fi
+}
+
+# ---------------------------------------------------------
+# Pass 1: Query principals.csv
+# ---------------------------------------------------------
+tail -n +2 "$input_csv" | while IFS=',' read -r orig_principal orig_subaccount; do
+    # Remove spaces
+    orig_principal="$(echo "$orig_principal" | tr -d '[:space:]')"
+    orig_subaccount="$(echo "$orig_subaccount" | tr -d '[:space:]')"
+
+    # Query
+    balance_val="$(query_balance "$orig_principal" "$orig_subaccount")"
+    status=$?
+
+    if [[ $status -eq 0 ]]; then
+        # success => log original principal,subaccount,balance
+        echo "$orig_principal,$orig_subaccount,$balance_val" >> "$output_pass1"
+    else
+        # fail => only log original principal,subaccount
+        echo "$orig_principal,$orig_subaccount" >> "$failed_first_pass_csv"
     fi
 done
+
+# ---------------------------------------------------------
+# Pass 2: Retry Failed Queries
+# ---------------------------------------------------------
+tail -n +2 "$failed_first_pass_csv" | while IFS=',' read -r orig_principal orig_subaccount; do
+    orig_principal="$(echo "$orig_principal" | tr -d '[:space:]')"
+    orig_subaccount="$(echo "$orig_subaccount" | tr -d '[:space:]')"
+
+    # If the principal has something like principal-subprefix.subhex
+    # we do the fix
+    local fix_balance
+    if [[ "$orig_principal" == *-*.* ]]; then
+        # parse out 'main_principal' and 'subaccount_hex'
+        main_principal="$(echo "$orig_principal" | cut -d'-' -f1-5)"
+        subaccount_hex="$(echo "$orig_principal" | cut -d'.' -f2)"
+        fix_balance="$(query_balance "$main_principal" "$subaccount_hex")"
+    else
+        # normal approach
+        fix_balance="$(query_balance "$orig_principal" "$orig_subaccount")"
+    fi
+
+    status=$?
+    if [[ $status -eq 0 ]]; then
+        # success => log original line + numeric
+        echo "$orig_principal,$orig_subaccount,$fix_balance" >> "$output_pass2"
+    else
+        # fail => final fail
+        echo "$orig_principal,$orig_subaccount" >> "$failed_final_csv"
+    fi
+done
+
+# ---------------------------------------------------------
+# Summary
+# ---------------------------------------------------------
+echo "All queries have been processed."
+echo "Summary:"
+echo "- Successful queries (Pass 1): $output_pass1"
+echo "- Successful queries (Pass 2): $output_pass2"
+echo "- Failed queries (First Pass): $failed_first_pass_csv"
+echo "- Failed queries (Final): $failed_final_csv"
 
