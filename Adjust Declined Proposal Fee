@@ -3,40 +3,32 @@ export PEM_FILE="/Users/cole/motoko.pem"
 
 
 
-
-cat <<EOF > decline-fee.candid
+cat <<EOF > inflation-adjust.candid
 (
     record {
-        title = “Adjust Declined Proposal Fee“;
+        title = "Adjust Declined Proposal Fee, Transaction Fee, and Minimum Stake";
         url = "https://discord.com/channels/905854635405889546/1320221321417723967/1320221326702804998";
         summary = "\
 ## Objective\n\n 
-This proposal aims to adjust the penalty associated with a declined proposal to the MOTOKO DAO from 0.25 MOTOKO to an inflation-adjusted value of 2500 MOTOKO, which is then suggested to face a 20% reduction, resulting in a total Declined Proposal Penalty of 2000 MOTOKO.\n\n 
+This proposal aims to adjust the fee associated with a declined proposal to the MOTOKO DAO from 0.25 MOTOKO to an inflation-adjusted value of 2500 MOTOKO. Additionally, it proposes to increase the transaction fee from 0.0001 MOTOKO to 1 MOTOKO, and set the minimum neuron stake to 1 MOTOKO.\n\n 
 ## Why this is important\n\n 
-The purpose of this proposal is to incentivize user participation, innovation, and the introduction of new ideas within the DAO, while also ensuring a deflationary aspect is maintained and proposals are well-considered.\n\n 
-## Pros\n\n 
-- Encourages participation & innovation within the DAO\n\n 
-- Provides an opportunity for smaller holders to put forth proposals without financial constraints\n\n 
-## Cons\n\n 
-- Opens the risk to spam proposals\n\n 
-- Higher proposal frequency increases the amount of time neurons must spend voting\n\n 
-- May lead to the reinstatement of higher MOTOKO declined proposal fees\n\n 
-## Security concerns \n\n 
-- Reduces the perceived security threshold if a substantial portion of neurons remain low timeframe stakes\n\n 
+The purpose of this proposal is to ensure the SNS parameters maintain their ratio in relation to the token split, and to prevent spam by enforcing a minimum stake for neurons.\n\n 
 ## What is asked of the community\n\n 
 - Engage in the governance discussion, ask questions, and provide feedback\n\n 
 - Continue to actively vote on proposals & participate in the DAO\n\n 
 - Promote responsible participation & use of tools\n\n 
 - Monitor for potential adverse outcomes\n\n
-        "; action = opt variant { 
+        "; action = opt variant { 
 ManageNervousSystemParameters = record { 
 reject_cost_e8s = opt (250000000000 : nat64);
+transaction_fee_e8s = opt (99999999 : nat64);  
+neuron_minimum_stake_e8s = opt (100000000 : nat64);  
                 }
             }
         }
-    }
 )
 EOF
+
 
 
 quill sns make-proposal \
