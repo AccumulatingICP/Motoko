@@ -35,7 +35,7 @@ quill sns make-proposal \
 --canister-ids-file ./sns-canister-ids.json \
 --pem-file "$PEM_FILE" \
 "$PROPOSAL_NEURON_ID" \
---proposal "$(cat decline-fee.candid)" > msg.json
+--proposal "$(cat inflation-adjust.candid)" > msg.json
 
 
 
