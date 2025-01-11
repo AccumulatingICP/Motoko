@@ -1,0 +1,34 @@
+export PROPOSAL_NEURON_ID="3ef5229ae69fdfc2d67a86a6b145abc9c64c897dcc8c419c8c4ebdef6ccdff01"
+export PEM_FILE="/Users/cole/motoko.pem"
+
+
+
+cat <<EOF > inflation-adjust.candid
+(
+    record {
+        title = "Temporarily Revert Transaction Fee";
+        url = "https://discord.com/channels/905854635405889546/905854636039237665/1327738530096615565";
+        summary = "\
+## Objective\n\n 
+Revert TXN fee to 0.0001 MOTOKO while bug is explored.\n\n 
+
+        "; action = opt variant { 
+ManageNervousSystemParameters = record { 
+transaction_fee_e8s = opt (10000 : nat64);  
+                }
+            }
+        }
+)
+EOF
+
+
+
+quill sns make-proposal \
+--canister-ids-file ./sns-canister-ids.json \
+--pem-file "$PEM_FILE" \
+"$PROPOSAL_NEURON_ID" \
+--proposal "$(cat inflation-adjust.candid)" > msg.json
+
+
+
+quill send msg.json
