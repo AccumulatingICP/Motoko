@@ -1,0 +1,41 @@
+export PROPOSAL_NEURON_ID="3ef5229ae69fdfc2d67a86a6b145abc9c64c897dcc8c419c8c4ebdef6ccdff01"
+export PEM_FILE="/Users/cole/motoko.pem"
+
+
+
+cat <<EOF > ghost.candid
+(
+    record {
+title = "Formal Acquisition Request of Motoko Ghosts";
+        url = "https://discord.com/channels/905854635405889546/1243214496122540162/1327744181019345006";
+        summary = "## Objective\n\n 
+This proposal formally requests to initiate the transfer of Motoko Ghosts assets (any Canisters & Royalties) from the current custodian, Toniq Labs, to the $MOTOKO DAOs possession, under the root canister of ko36b-myaaa-aaaaq-aadbq-cai and treasury address of 6f42eb919c18b05a79904bf7214bfce9d1cd365ea3bfcb51012098fe996fab59 . This proposal will be followed by additional proposals over the coming days to register the Motoko Ghost Canister as SNS controlled and adjust the canister to redirect future royalties to the DAOs treasury. Once this has been completed, royalties will be sent from the custodian account to the treasury. \n\n 
+## Security concerns\n\n 
+* It will be crucial to ensure staked supply continues to grow, otherwise Motoko Ghosts Canisters are at risk.\n\n 
+* Verify all proposals before voting to ensure the code within them aligns with this proposal. Any deviation should be rejected immediately.\n\n 
+## What is asked of the community\n\n 
+* Engage in governance discussion, ask questions, and provide feedback\n\n 
+* Continue actively staking & governing MOTOKO, and carefully review all proposals\n\n 
+* Promote responsible participation\n\n 
+";
+        action = opt variant {
+            Motion = record {
+                motion_text = "Formal Acquisition Request of Motoko Ghosts";
+
+                }
+            }
+        }
+)
+EOF
+
+
+
+quill sns make-proposal \
+--canister-ids-file ./sns-canister-ids.json \
+--pem-file "$PEM_FILE" \
+"$PROPOSAL_NEURON_ID" \
+--proposal "$(cat ghost.candid)" > msg.json
+
+
+
+quill send msg.json
