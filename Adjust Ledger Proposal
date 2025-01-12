@@ -1,0 +1,33 @@
+export PROPOSAL_NEURON_ID="3ef5229ae69fdfc2d67a86a6b145abc9c64c897dcc8c419c8c4ebdef6ccdff01"
+export PEM_FILE="/Users/cole/motoko.pem"
+
+
+
+cat <<EOF > ledger.candid
+(
+    record {
+title = "Adjust Ledger TXN Fee";
+        url = " https://discord.com/channels/905854635405889546/1205601893108158595/1327739962891829289";
+        summary = "\
+This proposal correctly adjusts the transaction fee to 1 MOTOKO and corrects the problem received when changing Nervous System Parameter transaction fees.
+";
+        action = opt variant {
+            ManageLedgerParameters = record {
+                transfer_fee = opt 100000000;
+                }
+            }
+        }
+)
+EOF
+
+
+
+quill sns make-proposal \
+--canister-ids-file ./sns-canister-ids.json \
+--pem-file "$PEM_FILE" \
+"$PROPOSAL_NEURON_ID" \
+--proposal "$(cat ledger.candid)" > msg.json
+
+
+
+quill send msg.json
