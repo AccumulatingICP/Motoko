@@ -116,7 +116,6 @@ shared (install) actor class nft_canister() = this {
   private var _disbursements : List.List<(TokenIndex, AccountIdentifier, SubAccount, Nat64)> = List.fromArray(_disbursementsState);
   private var salesFees : [(AccountIdentifier, Nat64)] = [
     ("6f42eb919c18b05a79904bf7214bfce9d1cd365ea3bfcb51012098fe996fab59", 2500), //Royalty Fee
-    ("c7e461041c0c5800a56b64bb7cefc247abc0bbbb99bd46ff71c64e92d9f5c2f9", 1000), //Entrepot Fee 1%
   ];
 
   //CAP
@@ -152,7 +151,7 @@ shared (install) actor class nft_canister() = this {
   private stable var _usedPaymentAddressess : [(AccountIdentifier, Principal, SubAccount)] = [];
   private stable var _transactions : [Transaction] = [];
   private stable var _supply : Balance = 0;
-  private stable var _minter : Principal = Principal.fromText("sensj-ihxp6-tyvl7-7zwvj-fr42h-7ojjp-n7kxk-z6tvo-vxykp-umhfk-wqe");
+  private stable var _minter : Principal = Principal.fromText("ko36b-myaaa-aaaaq-aadbq-cai");
   private stable var _nextTokenId : TokenIndex = 0;
 
   private var _claim : HashMap.HashMap<Principal, TokenIndex> = HashMap.fromIter(_claimState.vals(), 0, Principal.equal, Principal.hash);
@@ -586,7 +585,7 @@ shared (install) actor class nft_canister() = this {
   };
   public shared (msg) func adminRefund(password : Text, escrow : AccountIdentifier, sendto : AccountIdentifier) : async Text {
     assert (password == "PC%4W3@ZL3WZ5R$U!f088pjI");
-    assert (msg.caller == Principal.fromText("4opr7-aaepd-uw2ok-lpt52-bi5to-nguta-7r7gr-gx57i-tnzlw-ewjid-qae") or msg.caller == Principal.fromText("gt6pl-emtcy-selas-w57zx-kyok4-5ofde-vf5nq-6773c-2t6bv-bsems-tqe") or msg.caller == Principal.fromText("2sr56-kadmk-wfai7-753z7-yo6rd-a4d2f-ghedf-wrkvd-rav3s-2vcfm-wae") or msg.caller == Principal.fromText("aba3c-mjh2y-sp47u-cpa7l-fsiga-5dg2p-wqubj-ecp7c-zwrvc-724ko-wae"));
+    assert (msg.caller == Principal.fromText("ko36b-myaaa-aaaaq-aadbq-cai"));
     switch (_getSubAccountForAddress(escrow)) {
       case (?sa) {
         let response : ICPTs = await LEDGER_CANISTER.account_balance_dfx({
