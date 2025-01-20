@@ -1,0 +1,31 @@
+export PROPOSAL_NEURON_ID="3ef5229ae69fdfc2d67a86a6b145abc9c64c897dcc8c419c8c4ebdef6ccdff01"
+export PEM_FILE="/Users/cole/motoko.pem"
+
+
+
+cat <<EOF > upgrade_canister.candid
+(
+    record {
+        title = "Upgrade Motoko Ghosts Canister";
+        url = "https://github.com/Toniq-Labs/motoko-day-drop/commit/18ab1937b2fb89b49638eb57aefb767ee5db2b2f";
+        summary = "This proposal upgrades the Motoko Ghosts canister to change the royalty address to the DAO Treasury.";
+        action = opt variant {
+            UpgradeSnsControlledCanister = record {
+                canister_id = opt principal "oeee4-qaaaa-aaaak-qaaeq-cai";
+                new_canister_wasm = vec {file("motoko-day-drop/.dfx/local/canisters/motokoghosts/motokoghosts.wasm")};
+                mode = opt 3;
+            }
+        }
+    }
+)
+EOF
+
+
+quill sns make-proposal \
+--canister-ids-file ./sns_canister_ids.json \
+--pem-file "$PEM_FILE" \
+"$PROPOSAL_NEURON_ID" \
+--proposal "$(cat upgrade_canister.candid)" > upgrade_proposal.json
+
+
+quill send upgrade_proposal.json
