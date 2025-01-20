@@ -1,0 +1,14 @@
+(
+    record {
+        title = "Upgrade Motoko Ghosts Canister";
+        url = "https://github.com/Toniq-Labs/motoko-day-drop/commit/18ab1937b2fb89b49638eb57aefb767ee5db2b2f";
+        summary = "This proposal upgrades the Motoko Ghosts canister to change the royalty address to the DAO Treasury.";
+        action = opt variant {
+            UpgradeSnsControlledCanister = record {
+                canister_id = opt principal "oeee4-qaaaa-aaaak-qaaeq-cai";
+                new_canister_wasm = vec {file("motoko-day-drop/.dfx/local/canisters/motokoghosts/motokoghosts.wasm")};
+                mode = opt 3;
+            }
+        }
+    }
+)
