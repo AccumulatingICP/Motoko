@@ -151,7 +151,6 @@ shared (install) actor class nft_canister() = this {
   private stable var _usedPaymentAddressess : [(AccountIdentifier, Principal, SubAccount)] = [];
   private stable var _transactions : [Transaction] = [];
   private stable var _supply : Balance = 0;
-  private stable var _minter : ?Principal = null;
   private stable var _nextTokenId : TokenIndex = 0;
 
   private var _claim : HashMap.HashMap<Principal, TokenIndex> = HashMap.fromIter(_claimState.vals(), 0, Principal.equal, Principal.hash);
@@ -582,44 +581,6 @@ shared (install) actor class nft_canister() = this {
   public shared (msg) func adminStartHeartbeat() : async () {
     assert (msg.caller == _minter);
     _runHeartbeat := true;
-  };
-  public shared (msg) func adminRefund(password : Text, escrow : AccountIdentifier, sendto : AccountIdentifier) : async Text {
-    assert (password == "PC%4W3@ZL3WZ5R$U!f088pjI");
-    assert (msg.caller == "ko36b-myaaa-aaaaq-aadbq-cai");
-    switch (_getSubAccountForAddress(escrow)) {
-      case (?sa) {
-        let response : ICPTs = await LEDGER_CANISTER.account_balance_dfx({
-          account = escrow;
-        });
-        if (response.e8s > 10000) {
-          var bh = await LEDGER_CANISTER.send_dfx({
-            memo = 0;
-            amount = { e8s = (response.e8s - 10000) };
-            fee = { e8s = 10000 };
-            from_subaccount = ?sa;
-            to = sendto;
-            created_at_time = null;
-          });
-          return "FOUND ADDRESS AND SENT";
-        };
-        return "NOT ENOUGH FUNDS IN ADDRESS";
-      };
-      case (_) {};
-    };
-    return "NOT VALID ESCROW ADDRESS";
-  };
-  func _getSubAccountForAddress(a : AccountIdentifier) : ?SubAccount {
-    var s : Nat = 4294967296;
-    while (s < (4294967296 + _nextSubAccount)) {
-      var sa = _natToSubAccount(s);
-      if (AID.fromPrincipal(Principal.fromActor(this), ?sa) == a) return ?sa;
-      s += 1;
-    };
-    return null;
-  };
-  public shared (msg) func setMinter(minter : Principal) : async () {
-    assert (msg.caller == _minter);
-    _minter := minter;
   };
   public shared (msg) func mintNFT(request : MintRequest) : async TokenIndex {
     assert (msg.caller == _minter);
