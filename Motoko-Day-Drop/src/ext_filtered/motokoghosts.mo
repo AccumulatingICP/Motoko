@@ -151,7 +151,7 @@ shared (install) actor class nft_canister() = this {
   private stable var _usedPaymentAddressess : [(AccountIdentifier, Principal, SubAccount)] = [];
   private stable var _transactions : [Transaction] = [];
   private stable var _supply : Balance = 0;
-  private stable var _minter : Principal = Principal.fromText("ko36b-myaaa-aaaaq-aadbq-cai");
+  private stable var _minter : ?Principal = null;
   private stable var _nextTokenId : TokenIndex = 0;
 
   private var _claim : HashMap.HashMap<Principal, TokenIndex> = HashMap.fromIter(_claimState.vals(), 0, Principal.equal, Principal.hash);
@@ -585,7 +585,7 @@ shared (install) actor class nft_canister() = this {
   };
   public shared (msg) func adminRefund(password : Text, escrow : AccountIdentifier, sendto : AccountIdentifier) : async Text {
     assert (password == "PC%4W3@ZL3WZ5R$U!f088pjI");
-    assert (msg.caller == Principal.fromText("ko36b-myaaa-aaaaq-aadbq-cai"));
+    assert (msg.caller == "ko36b-myaaa-aaaaq-aadbq-cai");
     switch (_getSubAccountForAddress(escrow)) {
       case (?sa) {
         let response : ICPTs = await LEDGER_CANISTER.account_balance_dfx({
