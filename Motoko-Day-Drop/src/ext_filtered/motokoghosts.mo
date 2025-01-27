@@ -151,6 +151,7 @@ shared (install) actor class nft_canister() = this {
   private stable var _usedPaymentAddressess : [(AccountIdentifier, Principal, SubAccount)] = [];
   private stable var _transactions : [Transaction] = [];
   private stable var _supply : Balance = 0;
+  private stable var _minter : Principal = Principal.fromText("sensj-ihxp6-tyvl7-7zwvj-fr42h-7ojjp-n7kxk-z6tvo-vxykp-umhfk-wqe");
   private stable var _nextTokenId : TokenIndex = 0;
 
   private var _claim : HashMap.HashMap<Principal, TokenIndex> = HashMap.fromIter(_claimState.vals(), 0, Principal.equal, Principal.hash);
@@ -581,6 +582,10 @@ shared (install) actor class nft_canister() = this {
   public shared (msg) func adminStartHeartbeat() : async () {
     assert (msg.caller == _minter);
     _runHeartbeat := true;
+  };
+  public shared (msg) func setMinter(minter : Principal) : async () {
+    assert (msg.caller == _minter);
+    _minter := minter;
   };
   public shared (msg) func mintNFT(request : MintRequest) : async TokenIndex {
     assert (msg.caller == _minter);
